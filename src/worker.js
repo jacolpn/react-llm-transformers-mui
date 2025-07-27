@@ -7,6 +7,7 @@ class MyCommandPipeline {
 
     static async getInstance(progress_callback = null) {
         if (this.instance === null) {
+            console.log('Initializing pipeline for the first time...');
             this.instance = pipeline(this.task, this.model, { 
                 progress_callback,
                 cache_dir: 'llm-cache',
@@ -19,8 +20,11 @@ class MyCommandPipeline {
 }
 
 self.addEventListener('message', async (event) => {
+    console.log('Worker received message:', event.data);
+    
     try {
         const { text, context: contextString } = event.data;
+        console.log('Processing command:', text);
 
         let context;
 
@@ -29,12 +33,14 @@ self.addEventListener('message', async (event) => {
             if (!Array.isArray(context)) {
                 throw new Error('Context must be an array');
             }
+            console.log('Context loaded with', context.length, 'fields');
         } catch (e) {
             console.error('Context parsing error:', e);
             context = [];
         }
 
         // Carrega o modelo
+        console.log('Loading model...');
         const generator = await MyCommandPipeline.getInstance((progress) => {
             self.postMessage(progress);
         });
@@ -72,22 +78,28 @@ self.addEventListener('message', async (event) => {
               "ok": false,
               "message": "Não entendi o comando"
             }
-
+            
             RESPONDA APENAS COM O JSON, SEM COMENTÁRIOS!
         `;
 
+        console.log('Generated prompt:', prompt);
+
         // Executa o modelo
+        console.log('Running model...');
         const output = await generator(prompt, {
             max_length: 500,
             temperature: 0.1,
             no_repeat_ngram_size: 3
         });
 
+        console.log('Model output:', output);
+        
+
         // Processa a saída
         let jsonResponse;
         try {
             const jsonMatch = output[0].generated_text.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) throw new Error('No JSON found');
+            if (!jsonMatch) throw new Error('No JSON found in response');
             
             jsonResponse = JSON.parse(jsonMatch[0]);
             
@@ -112,6 +124,8 @@ self.addEventListener('message', async (event) => {
                 error: e.message
             };
         }
+
+        console.log('Final response:', response);
 
         self.postMessage({
             status: 'complete',
