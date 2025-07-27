@@ -2,16 +2,16 @@ import { pipeline } from '@xenova/transformers';
 
 class MyCommandPipeline {
     static task = 'text2text-generation';
-    static model = 'Xenova/distilbart-cnn-6-6';
+    static model = 'Xenova/LaMini-Flan-T5-783M';
     static instance = null;
 
     static async getInstance(progress_callback = null) {
         if (this.instance === null) {
-            this.instance = pipeline(this.task, this.model, {
+            this.instance = pipeline(this.task, this.model, { 
                 progress_callback,
                 cache_dir: 'llm-cache',
-                quantized: true, // Fundamental para browser
-                local_files_only: false // Pode baixar automaticamente
+                quantized: true,
+                local_files_only: false
             });
         }
         return this.instance;
@@ -21,10 +21,9 @@ class MyCommandPipeline {
 self.addEventListener('message', async (event) => {
     try {
         const { text, context: contextString } = event.data;
-        console.log('Processing query:', text);
-        
-        // Parse do contexto (com fallback seguro)
+
         let context;
+
         try {
             context = JSON.parse(contextString || '[]');
             if (!Array.isArray(context)) {
@@ -35,11 +34,12 @@ self.addEventListener('message', async (event) => {
             context = [];
         }
 
-        console.log('With context:', context);
+        // Carrega o modelo
+        const generator = await MyCommandPipeline.getInstance((progress) => {
+            self.postMessage(progress);
+        });
 
-        const generator = await MyCommandPipeline.getInstance();
-        
-        // Formata o contexto para o prompt (com fallback para lista vazia)
+        // Formata o prompt
         const fieldsList = context.length > 0 
             ? context.map(f => `- ${f.field} (${f.type}): ${f.description || 'Sem descrição'}`).join('\n')
             : '- Nenhum campo disponível no contexto';
@@ -53,15 +53,15 @@ self.addEventListener('message', async (event) => {
 
             FORMATO DE RESPOSTA EXATO (apenas JSON):
             {
-            "ok": true,
-            "data": {
+              "ok": true,
+              "data": {
                 "sorting": [{
-                "column": "nome_do_campo",
-                "direction": "asc|desc"
+                  "column": "nome_do_campo",
+                  "direction": "asc|desc"
                 }],
                 "filters": [],
                 "conversationId": "id_aleatorio"
-            }
+              }
             }
 
             REGRAS:
@@ -69,39 +69,32 @@ self.addEventListener('message', async (event) => {
             2. "direction" deve ser "desc" se o comando mencionar "decrescente" ou "desc", caso contrário "asc"
             3. Se não entender, retorne:
             {
-            "ok": false,
-            "message": "Não entendi o comando"
+              "ok": false,
+              "message": "Não entendi o comando"
             }
 
             RESPONDA APENAS COM O JSON, SEM COMENTÁRIOS!
         `;
 
-        console.log('Generated prompt:', prompt);
-        
+        // Executa o modelo
         const output = await generator(prompt, {
             max_length: 500,
             temperature: 0.1,
             no_repeat_ngram_size: 3
         });
 
-        console.log('LLM raw output:', output[0].generated_text);
-
+        // Processa a saída
         let jsonResponse;
-
         try {
-            // Extrai o JSON mesmo que venha com outros textos
             const jsonMatch = output[0].generated_text.match(/\{[\s\S]*\}/);
-            
             if (!jsonMatch) throw new Error('No JSON found');
             
             jsonResponse = JSON.parse(jsonMatch[0]);
             
-            // Validação básica
             if (!jsonResponse.data || !jsonResponse.data.sorting) {
                 throw new Error('Invalid structure');
             }
             
-            // Verifica se os campos existem no contexto (se houver contexto)
             if (context.length > 0) {
                 const validFields = context.map(f => f.field);
                 jsonResponse.data.sorting.forEach(sort => {
@@ -113,7 +106,6 @@ self.addEventListener('message', async (event) => {
             
         } catch (e) {
             console.error('Processing error:', e);
-
             jsonResponse = {
                 ok: false,
                 message: `Não foi possível processar: "${text}"`,

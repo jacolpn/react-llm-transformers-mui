@@ -50,15 +50,14 @@ function App() {
     };
 
     worker.current.addEventListener('message', onMessageReceived);
-    return () => worker.current.removeEventListener('message', onMessageReceived);
-  });
+      return () => worker.current.removeEventListener('message', onMessageReceived);
+    }, []);
 
   const translate = () => {
       setDisabled(true);
       setOutput('Processando...');
       setJsonOutput(null);
       
-      // Validação básica do input
       if (!input || input.trim().length < 3) {
           setOutput('Por favor, digite um comando válido');
           setDisabled(false);
